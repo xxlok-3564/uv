@@ -106,10 +106,30 @@ impl Arch {
             variant: ArchVariant::from_env(),
         }
     }
+
+    /// Is the current architecture compatible with `other`?
+    ///
+    /// `other` can be a compatible microarchitecture with worse performance characteristics.
+    pub(crate) fn is_compatible(self, other: Self) -> bool {
+        self.family == other.family
+            && ((self.variant.is_none() && other.variant.is_none())
+                || self
+                    .variant
+                    .is_some_and(|variant| variant.is_compatible(other.variant)))
+    }
+
+    #[must_use]
+    pub fn without_variant(self) -> Self {
+        Self {
+            family: self.family,
+            variant: None,
+        }
+    }
 }
 
 impl ArchVariant {
-    #[cfg(target_arch = "x86_64")]
+    /// Only Linux `x86_64` variants are published upstream at this time.
+    #[cfg(all(unix, target_arch = "x86_64"))]
     pub fn from_env() -> Option<Self> {
         if is_x86_feature_detected!("avx512f")
             && is_x86_feature_detected!("avx512bw")
@@ -141,9 +161,26 @@ impl ArchVariant {
         }
     }
 
-    #[cfg(not(target_arch = "x86_64"))]
+    #[cfg(not(all(unix, target_arch = "x86_64")))]
     pub fn from_env() -> Option<Self> {
         None
+    }
+
+    /// Is the current variant compatible with `other`?
+    ///
+    /// `other` can be a compatible variant with lower priority, however, it must be a subset of
+    /// `self`.
+    pub(crate) fn is_compatible(self, other: Option<Self>) -> bool {
+        let Some(other) = other else {
+            // `None` can be used on any architecture
+            return true;
+        };
+        match self {
+            Self::V2 => matches!(other, Self::V2),
+            Self::V3 => matches!(other, Self::V2 | Self::V3),
+            // If on V4, any variant can be used.
+            Self::V4 => true,
+        }
     }
 }
 
